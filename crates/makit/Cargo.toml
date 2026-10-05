@@ -1,0 +1,10 @@
+[package]
+name = "makit"
+description = "A configuration-driven build system for C/C++ and Rust, adapted from Linux Kbuild/Kconfig"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
