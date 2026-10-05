@@ -1,0 +1,3 @@
+# bindgen and cbindgen run as built-in Rules, not inside `build.rs`
+
+Upstream recommends running bindgen as a library from `build.rs`. There it locates libclang on its own, is invisible to Makit's dependency tracking and runs outside the sandbox. Makit instead provides built-in Rules that invoke the `bindgen` / `cbindgen` CLIs as ordinary Actions: libclang is declared as a host Toolchain tool in `.makit/config.toml`, `--target` comes from the selected target Toolchain, and the `--depfile` output gives per-header and per-Symbol tracking just like C (ADR-0007). Generated `bindings.rs` lands in the Output tree and crates `include!` it. Crates that already run bindgen in `build.rs` keep working, but get none of these guarantees.
