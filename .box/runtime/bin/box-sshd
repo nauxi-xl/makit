@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# FRAMEWORK FILE. Optional sshd (ENABLE_SSH=true) for editors that only
+# speak Remote-SSH. Runs as the dev user on :2222; compose publishes it on
+# 127.0.0.1 only. Keys live in DEVENV_HOME/ssh (mounted at ~/.box-ssh).
+set -euo pipefail
+
+keys=$HOME/.box-ssh
+run=/tmp/box-sshd
+mkdir -p "$run"
+
+[ -f "$keys/ssh_host_ed25519_key" ] || ssh-keygen -q -t ed25519 -N '' -f "$keys/ssh_host_ed25519_key"
+if [ ! -f "$keys/id_box" ]; then
+  ssh-keygen -q -t ed25519 -N '' -C agent-devbox -f "$keys/id_box"
+  cp "$keys/id_box.pub" "$keys/authorized_keys"
+fi
+
+# Bind mounts from Windows show 0777; sshd refuses host keys that open.
+install -m 600 "$keys/ssh_host_ed25519_key" "$run/host_key"
+
+cat > "$run/sshd_config" <<CONF
+Port 2222
+HostKey $run/host_key
+AuthorizedKeysFile $keys/authorized_keys
+AllowUsers $USER
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+StrictModes no
+PidFile $run/sshd.pid
+SetEnv BASH_ENV=/tmp/box-env.sh
+CONF
+
+"$(command -v sshd)" -f "$run/sshd_config"
+echo "[box] sshd listening on :2222 (key: DEVENV_HOME/ssh/id_box)"

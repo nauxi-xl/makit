@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# FRAMEWORK FILE. Copies a template checkout (SRC) into a project (DST).
+# Framework files (.box/framework-files) are overwritten; user files
+# (.box/user-files) are only created when missing. Paths ending in / are
+# directories and are replaced wholesale. Used by `./dev update` and
+# `./dev init`; plain bash + coreutils so it runs in any Debian image.
+set -euo pipefail
+
+src=$1
+dst=$2
+
+entries() { grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$src/.box/$1" | tr -d '\r'; }
+
+while IFS= read -r p; do
+  if [ "${p%/}" != "$p" ]; then
+    rm -rf "${dst:?}/$p"
+    mkdir -p "$dst/$p"
+    cp -R "$src/$p." "$dst/$p"
+  else
+    mkdir -p "$(dirname "$dst/$p")"
+    cp -R "$src/$p" "$dst/$p"
+  fi
+  echo "  framework  $p"
+done < <(entries framework-files)
+
+while IFS= read -r p; do
+  if [ -e "$dst/$p" ]; then
+    echo "  kept       $p"
+  else
+    mkdir -p "$(dirname "$dst/$p")"
+    cp -R "$src/$p" "$dst/$p"
+    echo "  created    $p"
+  fi
+done < <(entries user-files)

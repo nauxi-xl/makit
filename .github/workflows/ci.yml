@@ -1,0 +1,33 @@
+# Template CI: lint the scripts, build the box, run the smoke test.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck dev .github/smoke.sh .box/runtime/bin/*
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: ./dev up
+        run: ./dev up
+      - name: smoke test
+        run: bash .github/smoke.sh
+      - name: logs on failure
+        if: failure()
+        run: |
+          docker compose -f .box/compose.yml logs dev || true
+          docker logs agent-devbox-memory-agentmemory-1 || true

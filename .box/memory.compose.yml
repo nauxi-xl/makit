@@ -1,0 +1,41 @@
+# FRAMEWORK FILE. One agentmemory instance shared by every project on this
+# machine (agentmemory scopes memories per project itself). `./dev up`
+# starts it when it is not running; `./dev down` leaves it alone.
+# It runs the agents image of whichever project started it.
+name: agent-devbox-memory
+
+services:
+  agentmemory:
+    image: ${BOX_IMAGE}
+    init: true
+    command: ["agentmemory"]
+    working_dir: /data
+    env_file:
+      - path: ${DEVENV_HOME}/.env
+        required: true
+    environment:
+      AGENTMEMORY_DATA_DIR: /data
+      AGENTMEMORY_III_CONFIG: /opt/box/memory/iii-config.yaml
+      AGENTMEMORY_VIEWER_HOST: 0.0.0.0
+      VIEWER_ALLOWED_HOSTS: localhost:3113,127.0.0.1:3113
+      III_TELEMETRY_ENABLED: "false"
+    volumes:
+      - ${DEVENV_HOME}/agentmemory:/data
+    ports:
+      - "127.0.0.1:3111:3111"
+      - "127.0.0.1:3113:3113"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3111/agentmemory/livez"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      devbox:
+        aliases: [agentmemory]
+
+networks:
+  devbox:
+    name: agent-devbox
+    external: true

@@ -1,0 +1,8 @@
+# Created by `./dev update` / `./dev init` only when missing; never overwritten.
+agents.Dockerfile
+nix/project.nix
+mcp.json
+.envrc
+.env.example
+.gitignore
+.claude/skills/

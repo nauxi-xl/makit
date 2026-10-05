@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# FRAMEWORK FILE. Main process of the dev container: prepares runtime state,
+# wires agents to MCP servers, then idles so `./dev shell` / VS Code attach.
+set -uo pipefail
+
+warn() { echo "[box] warning: $*" >&2; }
+
+# Snapshot the container env for SSH sessions (sshd starts them clean).
+(umask 077; export -p > /tmp/box-env.sh)
+
+box-cache-init || warn "nix cache init failed"
+[ -f /workspace/.envrc ] && { direnv allow /workspace/.envrc || warn "direnv allow failed"; }
+box-connect || warn "connect failed; rerun with ./dev connect"
+if [ "${ENABLE_SSH:-false}" = "true" ]; then
+  box-sshd || warn "sshd failed to start"
+fi
+
+echo "[box] ready"
+exec sleep infinity

@@ -1,0 +1,4 @@
+# Bind mounts from Windows/macOS hosts are not owned by `dev`; without
+# this git and Nix flakes (libgit2) refuse to read /workspace.
+[safe]
+	directory = *

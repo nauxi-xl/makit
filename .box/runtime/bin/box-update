@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# FRAMEWORK FILE. `./dev update`: pulls the latest framework files from the
+# template repo recorded in .box/template.lock. User files are only added
+# when missing, never overwritten.
+set -euo pipefail
+
+ws=${1:-/workspace}
+lock=$ws/.box/template.lock
+field() { sed -n "s/^$1=//p" "$lock" | tr -d '\r'; }
+
+repo=$(field repo)
+ref=$(field ref)
+ref=${ref:-main}
+current=$(field commit)
+
+latest=$(gh api "repos/$repo/commits/$ref" --jq .sha)
+if [ "$latest" = "$current" ]; then
+  echo "[box] already up to date ($repo@${latest:0:7})"
+  exit 0
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+gh api "repos/$repo/tarball/$latest" > "$tmp/template.tgz"
+mkdir "$tmp/src"
+tar -xzf "$tmp/template.tgz" -C "$tmp/src" --strip-components=1
+
+# Use the NEW template's apply logic, so file-list changes take effect.
+bash "$tmp/src/.box/runtime/bin/box-apply-template" "$tmp/src" "$ws"
+printf 'repo=%s\nref=%s\ncommit=%s\n' "$repo" "$ref" "$latest" > "$lock"
+
+echo "[box] updated $repo ${current:0:7} -> ${latest:0:7}"
+echo "[box] review with 'git diff', then run ./dev rebuild"

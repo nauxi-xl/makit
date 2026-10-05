@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# FRAMEWORK FILE. Copies the project's devShell closure into the shared
+# local cache (/nix-cache) so a rebuilt container gets it back without
+# downloading. Called in the background from .envrc; cheap when up to date.
+set -euo pipefail
+
+flake=${1:-/workspace}
+exec 9>/tmp/box-nix-sync.lock
+flock -n 9 || exit 0
+
+system=$(nix eval --impure --raw --expr builtins.currentSystem)
+out=$(nix build --no-link --print-out-paths "$flake#devShells.$system.default.inputDerivation")
+
+stamps=/nix-cache/.box/synced
+mkdir -p "$stamps"
+[ -e "$stamps/$(basename "$out")" ] && exit 0
+
+nix copy --to "file:///nix-cache?compression=zstd" "$out"
+touch "$stamps/$(basename "$out")"

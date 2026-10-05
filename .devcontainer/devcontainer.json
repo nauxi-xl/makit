@@ -1,0 +1,22 @@
+// FRAMEWORK FILE. Run `./dev up` first: it builds the images, starts the
+// shared memory server and creates the container. "Reopen in Container"
+// then attaches to that same container instead of making a new one.
+{
+  "name": "agent-devbox",
+  "dockerComposeFile": ["../.box/compose.yml"],
+  "service": "dev",
+  "runServices": ["dev"],
+  "workspaceFolder": "/workspace",
+  "remoteUser": "dev",
+  "overrideCommand": false,
+  "shutdownAction": "none",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "mkhl.direnv",
+        "jnoortheen.nix-ide",
+        "anthropic.claude-code"
+      ]
+    }
+  }
+}

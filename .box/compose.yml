@@ -1,0 +1,52 @@
+# FRAMEWORK FILE. The project's dev container. Used by both `./dev` and
+# VS Code (.devcontainer/devcontainer.json), so "Reopen in Container" reuses
+# the container `./dev up` created. Variables come from .box/.env, which
+# `./dev up` generates.
+name: ${BOX_PROJECT:?run ./dev up first}
+
+services:
+  dev:
+    image: ${BOX_IMAGE}
+    build:
+      context: ..
+      dockerfile: agents.Dockerfile
+      args:
+        BASE_IMAGE: ${BOX_BASE_IMAGE}
+    hostname: ${BOX_PROJECT}
+    init: true
+    env_file:
+      - path: ../.env
+        required: false
+      - path: ${DEVENV_HOME}/.env
+        required: true
+    environment:
+      BOX_PROJECT: ${BOX_PROJECT}
+      AGENTMEMORY_URL: http://agentmemory:3111
+    volumes:
+      - ..:/workspace
+      # Global (DEVENV_HOME): logins and agent config shared by every project.
+      - ${DEVENV_HOME}/credentials/claude:/home/dev/.claude
+      - ${DEVENV_HOME}/credentials/codex:/home/dev/.codex
+      - ${DEVENV_HOME}/credentials/gemini:/home/dev/.gemini
+      - ${DEVENV_HOME}/credentials/gh:/home/dev/.config/gh
+      # Per project.
+      - ./state:/home/dev/.box-state
+      - cache:/home/dev/.cache
+      - vscode-server:/home/dev/.vscode-server
+      # Shared local Nix binary cache.
+      - nix-cache:/nix-cache
+    networks:
+      - default
+      - devbox
+
+networks:
+  devbox:
+    name: agent-devbox
+    external: true
+
+volumes:
+  cache:
+  vscode-server:
+  nix-cache:
+    name: agent-devbox-nix-cache
+    external: true

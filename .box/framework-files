@@ -1,0 +1,17 @@
+# Overwritten by `./dev update` / `./dev init`. Trailing / = whole directory.
+dev
+dev.ps1
+dev.cmd
+Dockerfile
+flake.nix
+flake.lock
+nix/base.nix
+.gitattributes
+.dockerignore
+.devcontainer/devcontainer.json
+.box/compose.yml
+.box/compose.ssh.yml
+.box/memory.compose.yml
+.box/framework-files
+.box/user-files
+.box/runtime/

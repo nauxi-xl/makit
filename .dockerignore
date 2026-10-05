@@ -1,0 +1,7 @@
+# FRAMEWORK FILE. The images only COPY flake.nix, flake.lock, nix/ and .box/runtime/.
+.git
+.env
+.box/state
+.box/.env
+.direnv
+node_modules

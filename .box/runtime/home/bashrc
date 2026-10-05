@@ -1,0 +1,7 @@
+
+# --- agent-devbox -----------------------------------------------------------
+shopt -s histappend
+HISTSIZE=50000
+HISTFILESIZE=100000
+PROMPT_COMMAND="history -a${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+eval "$(direnv hook bash)"

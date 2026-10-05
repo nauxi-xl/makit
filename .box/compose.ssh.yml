@@ -1,0 +1,9 @@
+# FRAMEWORK FILE. Added by ./dev when ENABLE_SSH=true in .env.
+services:
+  dev:
+    environment:
+      ENABLE_SSH: "true"
+    ports:
+      - "127.0.0.1:${SSH_PORT:-2222}:2222"
+    volumes:
+      - ${DEVENV_HOME}/ssh:/home/dev/.box-ssh

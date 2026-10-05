@@ -1,0 +1,7 @@
+.env
+.box/.env
+.box/state/
+.direnv/
+# Generated from mcp.json by box-connect.
+.mcp.json
+.claude/settings.local.json

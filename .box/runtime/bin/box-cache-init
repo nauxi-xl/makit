@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# FRAMEWORK FILE. Prepares the shared local Nix binary cache (/nix-cache):
+# metadata plus a signing key, so paths built locally can be substituted
+# back after a rebuild.
+set -euo pipefail
+
+cache=/nix-cache
+meta=$cache/.box
+mkdir -p "$meta"
+
+[ -f "$cache/nix-cache-info" ] ||
+  printf 'StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 10\n' > "$cache/nix-cache-info"
+
+if [ ! -s "$meta/key.sec" ]; then
+  (umask 077; nix key generate-secret --key-name agent-devbox-local-1 > "$meta/key.sec")
+  nix key convert-secret-to-public < "$meta/key.sec" > "$meta/key.pub"
+fi
+
+cat > "$meta/nix.conf" <<CONF
+secret-key-files = $meta/key.sec
+extra-trusted-public-keys = $(cat "$meta/key.pub")
+CONF
