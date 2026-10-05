@@ -1,3 +1,5 @@
+//! The `makit` binary: resolves the command line into an Invocation and dispatches it.
+
 mod cli;
 
 use std::fmt;
@@ -6,11 +8,11 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use cli::{CacheAction, Cli, CliCommand, ToolAction};
+use cli::{CacheSubcommand, Cli, CliSubcommand, ToolSubcommand};
 
 /// What the user asked Makit to do, after resolving CLI syntax.
 #[derive(Debug)]
-enum Command {
+enum Invocation {
     Build,
     /// Seed a Configuration from `configs/<name>_defconfig`.
     Defconfig(String),
@@ -19,8 +21,9 @@ enum Command {
     Explain(PathBuf),
     Test,
     Fetch,
+    /// Run the named Command.
     Run(String),
-    /// Arguments are forwarded to the Tool once #17 lands.
+    /// Run the named Tool; its arguments are forwarded once #17 lands.
     Tool(String),
     CacheGc,
     ReproCheck,
@@ -28,39 +31,45 @@ enum Command {
     Mrproper,
 }
 
-impl Command {
-    fn from_cli(command: Option<CliCommand>) -> Result<Self, Error> {
-        Ok(match command {
-            None | Some(CliCommand::Build) => Self::Build,
-            Some(CliCommand::Olddefconfig) => Self::Olddefconfig,
-            Some(CliCommand::Savedefconfig) => Self::Savedefconfig,
-            Some(CliCommand::Explain { goal }) => Self::Explain(goal),
-            Some(CliCommand::Test) => Self::Test,
-            Some(CliCommand::Fetch) => Self::Fetch,
-            Some(CliCommand::Run { command }) => Self::Run(command),
-            Some(CliCommand::Tool {
+impl Invocation {
+    fn from_cli(subcommand: Option<CliSubcommand>) -> Result<Self, Error> {
+        Ok(match subcommand {
+            None | Some(CliSubcommand::Build) => Self::Build,
+            Some(CliSubcommand::Olddefconfig) => Self::Olddefconfig,
+            Some(CliSubcommand::Savedefconfig) => Self::Savedefconfig,
+            Some(CliSubcommand::Explain { goal }) => Self::Explain(goal),
+            Some(CliSubcommand::Test) => Self::Test,
+            Some(CliSubcommand::Fetch) => Self::Fetch,
+            Some(CliSubcommand::Run { command }) => Self::Run(command),
+            Some(CliSubcommand::Tool {
                 name,
-                action: ToolAction::Run { .. },
-            }) => Self::Tool(name),
-            Some(CliCommand::Cache {
-                action: CacheAction::Gc,
+                subcommand: ToolSubcommand::External(args),
+            }) => {
+                if args[0] != "run" {
+                    let typed = args[0].to_string_lossy();
+                    return Err(Error::UnknownSubcommand(format!("tool {name} {typed}")));
+                }
+                Self::Tool(name)
+            }
+            Some(CliSubcommand::Cache {
+                subcommand: CacheSubcommand::Gc,
             }) => Self::CacheGc,
-            Some(CliCommand::ReproCheck) => Self::ReproCheck,
-            Some(CliCommand::Clean) => Self::Clean,
-            Some(CliCommand::Mrproper) => Self::Mrproper,
-            Some(CliCommand::External(args)) => {
+            Some(CliSubcommand::ReproCheck) => Self::ReproCheck,
+            Some(CliSubcommand::Clean) => Self::Clean,
+            Some(CliSubcommand::Mrproper) => Self::Mrproper,
+            Some(CliSubcommand::External(args)) => {
                 let name = args[0].to_string_lossy().into_owned();
                 match name.strip_suffix("_defconfig") {
                     Some(defconfig) if args.len() == 1 && !defconfig.is_empty() => {
                         Self::Defconfig(defconfig.to_owned())
                     }
-                    _ => return Err(Error::UnknownCommand(name)),
+                    _ => return Err(Error::UnknownSubcommand(name)),
                 }
             }
         })
     }
 
-    /// The command as typed on the command line, without options.
+    /// The invocation as typed on the command line, without options.
     fn name(&self) -> String {
         match self {
             Self::Build => "build".into(),
@@ -79,7 +88,7 @@ impl Command {
         }
     }
 
-    /// GitHub issue tracking the implementation of this command.
+    /// GitHub issue tracking the implementation of this invocation.
     fn tracking_issue(&self) -> u32 {
         match self {
             Self::Defconfig(_) | Self::Olddefconfig | Self::Savedefconfig => 5,
@@ -94,7 +103,7 @@ impl Command {
         }
     }
 
-    /// Whether the command reads or writes an Output tree, and so needs `-O`.
+    /// Whether the invocation reads or writes an Output tree, and so needs `-O`.
     ///
     /// Makit never picks a default Output tree, so it can never write into the Source tree by accident.
     fn needs_output_tree(&self) -> bool {
@@ -106,31 +115,28 @@ impl Command {
             | Self::Explain(_)
             | Self::Test
             | Self::Run(_)
+            | Self::ReproCheck
             | Self::Clean
             | Self::Mrproper => true,
-            // Toolchain Tools will need -O to know the selected Toolchain; that is checked once the
-            // Project manifest is loaded.
-            Self::Tool(_) | Self::Fetch | Self::CacheGc | Self::ReproCheck => false,
+            // Toolchain tools (CC, CARGO, ...) will need -O to know the selected Toolchain; that is
+            // checked once the Project manifest is loaded.
+            Self::Tool(_) | Self::Fetch | Self::CacheGc => false,
         }
     }
 }
 
 #[derive(Debug)]
 enum Error {
-    /// Exit code 2: the invocation itself is wrong.
-    UnknownCommand(String),
+    UnknownSubcommand(String),
     MissingOutputTree(String),
-    /// Exit code 1: a valid command whose implementation has not landed yet.
-    NotImplemented {
-        command: String,
-        issue: u32,
-    },
+    NotImplemented { invocation: String, issue: u32 },
 }
 
 impl Error {
+    /// 2 when the command line itself is wrong, 1 when a valid invocation cannot run yet.
     fn exit_code(&self) -> u8 {
         match self {
-            Self::UnknownCommand(_) | Self::MissingOutputTree(_) => 2,
+            Self::UnknownSubcommand(_) | Self::MissingOutputTree(_) => 2,
             Self::NotImplemented { .. } => 1,
         }
     }
@@ -139,19 +145,17 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnknownCommand(name) => {
-                write!(
-                    f,
-                    "unknown command `{name}` (Defconfigs are named `<name>_defconfig`)"
-                )
-            }
+            Self::UnknownSubcommand(name) => write!(
+                f,
+                "unknown subcommand `{name}` (Defconfigs are named `<name>_defconfig`)"
+            ),
             Self::MissingOutputTree(name) => {
                 write!(f, "`{name}` needs an Output tree: pass -O <DIR>")
             }
-            Self::NotImplemented { command, issue } => {
+            Self::NotImplemented { invocation, issue } => {
                 write!(
                     f,
-                    "`{command}` is not implemented yet (tracked in #{issue})"
+                    "`{invocation}` is not implemented yet (tracked in #{issue})"
                 )
             }
         }
@@ -159,13 +163,13 @@ impl fmt::Display for Error {
 }
 
 fn run(cli: Cli) -> Result<(), Error> {
-    let command = Command::from_cli(cli.command)?;
-    if command.needs_output_tree() && cli.output.is_none() {
-        return Err(Error::MissingOutputTree(command.name()));
+    let invocation = Invocation::from_cli(cli.subcommand)?;
+    if invocation.needs_output_tree() && cli.output.is_none() {
+        return Err(Error::MissingOutputTree(invocation.name()));
     }
     Err(Error::NotImplemented {
-        issue: command.tracking_issue(),
-        command: command.name(),
+        issue: invocation.tracking_issue(),
+        invocation: invocation.name(),
     })
 }
 

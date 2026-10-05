@@ -14,20 +14,16 @@ use clap::{Parser, Subcommand};
                   which reads configs/<name>_defconfig."
 )]
 pub struct Cli {
-    /// Output tree receiving every artifact of this build (Kbuild's `O=`)
+    /// Output tree receiving everything this build produces (Kbuild's `O=`)
     #[arg(short = 'O', long = "output", value_name = "DIR", global = true)]
     pub output: Option<PathBuf>,
 
-    /// Print full command lines instead of the short `CC foo.o` form
-    #[arg(short, long, global = true)]
-    pub verbose: bool,
-
     #[command(subcommand)]
-    pub command: Option<CliCommand>,
+    pub subcommand: Option<CliSubcommand>,
 }
 
 #[derive(Debug, Subcommand)]
-pub enum CliCommand {
+pub enum CliSubcommand {
     /// Build the Goals selected by the Configuration (the default)
     Build,
     /// Update .config after Kconfig changes, taking defaults for new Symbols
@@ -41,24 +37,27 @@ pub enum CliCommand {
     },
     /// Build and run every Test Goal
     Test,
-    /// Download remote inputs; the only phase allowed to use the network
+    /// Fetch remote inputs (crates, tarballs, git sources); the only phase allowed to use the network
     Fetch,
     /// Run a Command declared in .makit/commands.mk
     Run {
         /// Command name, without the `run-` prefix
         command: String,
     },
-    /// Use a declared Tool directly
+    /// Run a declared Tool directly; everything after `run` is passed to it untouched
+    #[command(override_usage = "makit tool <NAME> run [ARGS]...")]
     Tool {
-        /// Tool name as declared in .makit/config.toml (e.g. PANDOC, CC)
+        /// A Tool from [tools] in .makit/config.toml, or a Toolchain tool such as CC
         name: String,
+        // An external subcommand keeps clap from parsing makit's own options (-O, --help) out of
+        // the Tool's arguments.
         #[command(subcommand)]
-        action: ToolAction,
+        subcommand: ToolSubcommand,
     },
     /// Manage the machine-wide Cache
     Cache {
         #[command(subcommand)]
-        action: CacheAction,
+        subcommand: CacheSubcommand,
     },
     /// Build twice in different Output trees and compare the outputs
     ReproCheck,
@@ -72,16 +71,14 @@ pub enum CliCommand {
 }
 
 #[derive(Debug, Subcommand)]
-pub enum ToolAction {
-    /// Run the Tool with the given arguments
-    Run {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<OsString>,
-    },
+pub enum ToolSubcommand {
+    /// `run [ARGS]...`
+    #[command(external_subcommand)]
+    External(Vec<OsString>),
 }
 
 #[derive(Debug, Subcommand)]
-pub enum CacheAction {
+pub enum CacheSubcommand {
     /// Evict least-recently-used entries down to the configured size limit
     Gc,
 }

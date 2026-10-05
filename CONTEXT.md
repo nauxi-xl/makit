@@ -105,7 +105,7 @@ _Avoid_: global config, user config
 The directory tree holding the project's inputs (sources, Kconfig files, Build files). Makit never writes into it.
 
 **Output tree**:
-A separate directory receiving every artifact of one build (Kbuild's `O=`); one Source tree can have many Output trees.
+A separate directory receiving everything one build produces (Kbuild's `O=`); one Source tree can have many Output trees.
 _Avoid_: build dir, obj dir
 
 **Export**:
