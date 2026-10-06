@@ -77,3 +77,13 @@ icacls "$HOME\.agent-devbox\ssh\id_box" /inheritance:r /grant:r "${env:USERNAME}
 
 - Trên Windows, đọc ghi file qua bind mount khá chậm. Với project lớn, nên clone vào ổ của WSL2.
 - `./dev rebuild` không khởi động lại memory server. Muốn memory server dùng image mới thì chạy `./dev memory restart`.
+
+## Bootstrap Makit
+
+Makit tự build chính repo này (dogfooding). Cần `cargo`, `rustc` và một C compiler (trong devbox đã có sẵn qua `nix/project.nix`):
+
+```
+./bootstrap    # stage0: cargo build; stage1: makit -O out/bootstrap/stage1 build
+```
+
+Khi executor chưa xong (#8), stage1 dừng ở "not implemented yet" nhưng vẫn kiểm tra được Project manifest (`.makit/config.toml`), Output tree và host Toolchain.

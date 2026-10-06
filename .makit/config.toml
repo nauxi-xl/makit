@@ -1,0 +1,13 @@
+# Makit's own Project manifest: the Makit repository is built by Makit (see ./bootstrap).
+
+[project]
+name = "makit"
+makit-version = "0.1"
+
+# Makit is built for the machine that builds it, with whatever rustc and Cargo are on PATH.
+[toolchain.native]
+role = "target"
+RUSTC = "rustc"
+CARGO = "cargo"
+
+# The host Toolchain is left undeclared: Makit detects it.

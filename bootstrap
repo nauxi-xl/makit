@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Builds Makit, then has that Makit build the Makit repository (dogfooding).
+#
+#   stage0  Cargo builds makit.
+#   stage1  stage0 builds this repository into $OUT/stage1, using .makit/config.toml.
+#
+# Until the executor lands (#8), stage1 ends at "not implemented yet". Getting that far still
+# proves stage0 accepts this repository: Project manifest, Output tree and host Toolchain.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+OUT=${OUT:-out/bootstrap}
+
+info() { echo "[bootstrap] $*"; }
+
+info "stage0: cargo build"
+cargo build --locked --quiet
+makit=target/debug/makit
+
+# A fresh Output tree, so a host Toolchain recorded by an earlier run never gets in the way.
+rm -rf "$OUT/stage1"
+info "stage1: $makit -O $OUT/stage1 build"
+set +e
+stage1=$("$makit" -O "$OUT/stage1" build 2>&1)
+status=$?
+set -e
+echo "$stage1"
+
+if [ "$status" -eq 0 ]; then
+  info "stage1 built"
+elif [ "$status" -eq 1 ] && grep -q "is not implemented yet" <<<"$stage1"; then
+  info "stage1 accepted the repository; building it waits for the executor (#8)"
+else
+  info "stage1 failed (exit $status)"
+  exit 1
+fi
