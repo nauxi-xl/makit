@@ -6,8 +6,11 @@
 #
 # Note: Nix flakes only see files tracked by git, so `git add` new .nix files.
 pkgs: with pkgs; [
-  # python313
-  # go
-  # rustup
-  # postgresql_17
+  # Makit is written in Rust.
+  cargo
+  rustc
+  clippy
+  rustfmt
+  # rustc links through `cc`; also the C toolchain for Makit's own tests.
+  gcc
 ]
