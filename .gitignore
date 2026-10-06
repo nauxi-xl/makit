@@ -8,3 +8,6 @@
 
 # Rust build output
 /target/
+
+# Output trees of ./bootstrap and local builds
+/out/
