@@ -16,7 +16,7 @@ use clap::Parser;
 use cli::{CacheSubcommand, Cli, CliSubcommand, ToolSubcommand};
 use host_toolchain::HostError;
 use manifest::{Manifest, ManifestError};
-use output_tree::OutputTree;
+use output_tree::{OutputTree, OutputTreeError};
 use source_tree::{MANIFEST_PATH, SourceTree};
 
 /// What the user asked Makit to do, after resolving CLI syntax.
@@ -143,9 +143,10 @@ impl Invocation {
 enum Error {
     UnknownSubcommand(String),
     MissingOutputTree(String),
+    WorkingDirectory(std::io::Error),
     NoProjectManifest(PathBuf),
     Manifest(ManifestError),
-    OutputTreeOverlapsSource(PathBuf),
+    OutputTree(OutputTreeError),
     Host(HostError),
     UnknownOverride(String),
     NotImplemented { invocation: String, issue: u32 },
@@ -155,14 +156,8 @@ impl Error {
     /// 1 when a valid invocation cannot run yet, 2 for everything the user has to fix.
     fn exit_code(&self) -> u8 {
         match self {
-            Self::UnknownSubcommand(_)
-            | Self::MissingOutputTree(_)
-            | Self::NoProjectManifest(_)
-            | Self::Manifest(_)
-            | Self::OutputTreeOverlapsSource(_)
-            | Self::Host(_)
-            | Self::UnknownOverride(_) => 2,
             Self::NotImplemented { .. } => 1,
+            _ => 2,
         }
     }
 }
@@ -177,33 +172,20 @@ impl fmt::Display for Error {
             Self::MissingOutputTree(name) => {
                 write!(f, "`{name}` needs an Output tree: pass -O <DIR>")
             }
+            Self::WorkingDirectory(error) => {
+                write!(f, "cannot read the working directory: {error}")
+            }
             Self::NoProjectManifest(dir) => write!(
                 f,
                 "no Project manifest ({MANIFEST_PATH}) in {} or any parent directory",
                 dir.display()
             ),
             Self::Manifest(error) => error.fmt(f),
-            Self::OutputTreeOverlapsSource(dir) => write!(
-                f,
-                "the Output tree {} must not be or contain the Source tree; \
-                 use a subdirectory (-O out) or a directory elsewhere",
-                dir.display()
-            ),
-            Self::Host(HostError::NotFound { variable, program }) => {
-                write!(f, "host tool {variable}: cannot find `{program}`")
-            }
-            Self::Host(HostError::Changed { variables }) => write!(
-                f,
-                "the host Toolchain changed since this Output tree was configured ({}); \
-                 rebuild in a new Output tree, or delete {} from this one to accept the change",
-                variables.join(", "),
-                host_toolchain::RECORD_FILE
-            ),
-            Self::Host(HostError::Io(path, error)) => write!(f, "{}: {error}", path.display()),
+            Self::OutputTree(error) => error.fmt(f),
+            Self::Host(error) => error.fmt(f),
             Self::UnknownOverride(name) => write!(
                 f,
-                "unknown override `{name}`; overrides name a Tool from the Project manifest \
-                 or a host tool like HOSTCC"
+                "unknown override `{name}`; overrides name a Tool, a target Toolchain tool or a host tool like HOSTCC"
             ),
             Self::NotImplemented { invocation, issue } => {
                 write!(
@@ -221,15 +203,15 @@ fn run(cli: Cli, overrides: &BTreeMap<String, String>) -> Result<(), Error> {
         return Err(Error::MissingOutputTree(invocation.name()));
     }
     if invocation.needs_source_tree() {
-        let cwd = std::env::current_dir().expect("cannot read the working directory");
+        let cwd = std::env::current_dir().map_err(Error::WorkingDirectory)?;
         let source_tree =
             SourceTree::discover(&cwd).ok_or(Error::NoProjectManifest(cwd.clone()))?;
         let manifest = Manifest::load(&source_tree.manifest_path()).map_err(Error::Manifest)?;
         check_overrides(&manifest, overrides)?;
         if let (true, Some(dir)) = (invocation.needs_output_tree(), &cli.output) {
-            let output_tree = OutputTree::new(dir, &cwd, &source_tree)
-                .map_err(Error::OutputTreeOverlapsSource)?;
-            let host = host_toolchain::resolve(&manifest, overrides, &source_tree.root)
+            let output_tree =
+                OutputTree::new(dir, &cwd, &source_tree).map_err(Error::OutputTree)?;
+            let host = host_toolchain::resolve(&manifest, overrides, &source_tree.root, &cwd)
                 .map_err(Error::Host)?;
             host_toolchain::record_or_check(&output_tree, &host).map_err(Error::Host)?;
         }

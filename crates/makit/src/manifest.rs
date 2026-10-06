@@ -11,7 +11,7 @@ use serde::Deserialize;
 pub struct Manifest {
     pub toolchains: BTreeMap<String, Toolchain>,
     /// Tools from `[tools]`, by name.
-    pub tools: BTreeMap<String, ToolCommand>,
+    pub tools: BTreeMap<String, Argv>,
 }
 
 #[derive(Debug)]
@@ -19,7 +19,7 @@ pub struct Toolchain {
     pub role: Role,
     pub default: bool,
     /// The Toolchain's tools (CC, CXX, AR, ...), by name.
-    pub tools: BTreeMap<String, ToolCommand>,
+    pub tools: BTreeMap<String, Argv>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -29,11 +29,23 @@ pub enum Role {
     Target,
 }
 
-/// How a Tool is invoked: a program plus fixed leading arguments.
+/// How a tool is invoked: a program plus fixed leading arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToolCommand {
+pub struct Argv {
     pub program: String,
     pub args: Vec<String>,
+}
+
+impl Argv {
+    /// Splits a Kbuild-style value such as `HOSTCC="ccache cc"` on whitespace.
+    pub fn from_words(value: &str) -> Option<Self> {
+        let mut words = value.split_whitespace().map(str::to_owned);
+        let program = words.next()?;
+        Some(Self {
+            program,
+            args: words.collect(),
+        })
+    }
 }
 
 /// A Project manifest that cannot be used, and why.
@@ -58,7 +70,7 @@ struct RawManifest {
     #[serde(default)]
     toolchain: BTreeMap<String, RawToolchain>,
     #[serde(default)]
-    tools: BTreeMap<String, RawToolCommand>,
+    tools: BTreeMap<String, RawArgv>,
 }
 
 #[derive(Default, Deserialize)]
@@ -76,15 +88,15 @@ struct RawToolchain {
     #[serde(default)]
     default: bool,
     #[serde(flatten)]
-    tools: BTreeMap<String, RawToolCommand>,
+    tools: BTreeMap<String, RawArgv>,
 }
 
 /// `CC = "gcc"` names a program; `CC = ["clang", "--target=arm-none-eabi"]` adds fixed arguments.
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum RawToolCommand {
+enum RawArgv {
     Program(String),
-    Argv(Vec<String>),
+    Words(Vec<String>),
 }
 
 impl Manifest {
@@ -104,18 +116,35 @@ impl Manifest {
             let toolchain = Toolchain {
                 role: raw.role,
                 default: raw.default,
-                tools: tool_commands(raw.tools).map_err(&fail)?,
+                tools: argvs(raw.tools, &format!("[toolchain.{name}]"), "Toolchain tool")
+                    .map_err(&fail)?,
             };
             toolchains.insert(name, toolchain);
         }
-        let tools = tool_commands(raw.tools).map_err(&fail)?;
+        let tools = argvs(raw.tools, "[tools]", "Tool").map_err(&fail)?;
 
         let manifest = Self { toolchains, tools };
         manifest.check_roles().map_err(fail)?;
         Ok(manifest)
     }
 
-    /// Names of every Tool in `[tools]` and in every target Toolchain.
+    /// Host Toolchain tools by name (`CC`, ...); empty when the host Toolchain is undeclared.
+    pub fn host_tools(&self) -> BTreeMap<&str, &Argv> {
+        self.toolchains
+            .values()
+            .filter(|toolchain| toolchain.role == Role::Host)
+            .flat_map(|toolchain| &toolchain.tools)
+            .map(|(name, argv)| (name.as_str(), argv))
+            .collect()
+    }
+
+    pub fn declares_host(&self) -> bool {
+        self.toolchains
+            .values()
+            .any(|toolchain| toolchain.role == Role::Host)
+    }
+
+    /// Names of every Tool (`[tools]`) and every target Toolchain tool.
     pub fn target_tool_names(&self) -> impl Iterator<Item = &str> {
         self.toolchains
             .values()
@@ -166,25 +195,28 @@ impl Manifest {
     }
 }
 
-fn tool_commands(
-    raw: BTreeMap<String, RawToolCommand>,
-) -> Result<BTreeMap<String, ToolCommand>, String> {
+/// Validates the tools of one table; `table` and `kind` only shape the error messages.
+fn argvs(
+    raw: BTreeMap<String, RawArgv>,
+    table: &str,
+    kind: &str,
+) -> Result<BTreeMap<String, Argv>, String> {
     raw.into_iter()
         .map(|(name, command)| {
             if !is_tool_name(&name) {
                 return Err(format!(
-                    "`{name}` is not a valid Tool name; Tool names are upper-case, like CC or PANDOC"
+                    "`{name}` in {table} is not a valid {kind} name; names are upper-case, like CC or PANDOC"
                 ));
             }
             let mut argv = match command {
-                RawToolCommand::Program(program) => vec![program],
-                RawToolCommand::Argv(argv) => argv,
+                RawArgv::Program(program) => vec![program],
+                RawArgv::Words(argv) => argv,
             };
             if argv.first().is_none_or(|program| program.is_empty()) {
-                return Err(format!("`{name}` needs a program to run"));
+                return Err(format!("`{name}` in {table} needs a program to run"));
             }
             let program = argv.remove(0);
-            Ok((name, ToolCommand { program, args: argv }))
+            Ok((name, Argv { program, args: argv }))
         })
         .collect()
 }

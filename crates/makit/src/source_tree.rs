@@ -3,6 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
+/// Directory of committed Makit project files at the Source tree root.
+pub const MAKIT_DIR: &str = ".makit";
+
 /// Location of the Project manifest relative to the Source tree root.
 pub const MANIFEST_PATH: &str = ".makit/config.toml";
 

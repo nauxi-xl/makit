@@ -88,27 +88,37 @@ pub enum CacheSubcommand {
 
 /// Splits Kbuild-style `NAME=value` overrides (`makit -O out HOSTCC=clang`) out of the arguments.
 ///
-/// Scanning stops at `tool`: everything after `makit tool <NAME> run` belongs to the Tool.
+/// The value of `-O`/`--output` is never an override, and scanning stops once the subcommand is
+/// `tool`: everything after `makit tool <NAME> run` belongs to the Tool.
 pub fn split_overrides(
     args: impl IntoIterator<Item = OsString>,
 ) -> (Vec<OsString>, BTreeMap<String, String>) {
     let mut rest = Vec::new();
     let mut overrides = BTreeMap::new();
-    let mut scanning = true;
-    for arg in args {
-        if arg == "tool" {
-            scanning = false;
+    let mut args = args.into_iter();
+    // The program name.
+    rest.extend(args.next());
+    let mut subcommand_seen = false;
+    while let Some(arg) = args.next() {
+        let text = arg.to_str().unwrap_or_default();
+        if text == "-O" || text == "--output" {
+            rest.push(arg);
+            rest.extend(args.next());
+            continue;
         }
-        let assignment = arg
-            .to_str()
-            .and_then(|text| text.split_once('='))
-            .filter(|(name, _)| is_tool_name(name));
-        match assignment {
-            Some((name, value)) if scanning => {
-                overrides.insert(name.to_owned(), value.to_owned());
+        if let Some((name, value)) = text.split_once('=').filter(|(name, _)| is_tool_name(name)) {
+            overrides.insert(name.to_owned(), value.to_owned());
+            continue;
+        }
+        if !subcommand_seen && !text.starts_with('-') {
+            subcommand_seen = true;
+            if text == "tool" {
+                rest.push(arg);
+                rest.extend(args);
+                break;
             }
-            _ => rest.push(arg),
         }
+        rest.push(arg);
     }
     (rest, overrides)
 }

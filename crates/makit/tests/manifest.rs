@@ -44,15 +44,15 @@ fn manifest_mistakes_are_reported_with_the_manifest_path() {
         ),
         (
             "[toolchain.arm-gcc]\nrole = \"target\"\ncc = \"gcc\"",
-            "`cc` is not a valid Tool name",
+            "`cc` in [toolchain.arm-gcc] is not a valid Toolchain tool name",
         ),
         (
             "[toolchain.arm-gcc]\nrole = \"target\"\n[tools]\npandoc = \"pandoc\"",
-            "`pandoc` is not a valid Tool name",
+            "`pandoc` in [tools] is not a valid Tool name",
         ),
         (
             "[toolchain.arm-gcc]\nrole = \"target\"\nCC = []",
-            "`CC` needs a program",
+            "`CC` in [toolchain.arm-gcc] needs a program",
         ),
     ] {
         let out = Project::new(manifest).makit(&["-O", "out", "build"]);
@@ -191,7 +191,7 @@ fn overrides_must_name_a_tool() {
     assert_fails(
         &Project::minimal().makit(&["-O", "out", "V=1", "build"]),
         2,
-        "unknown override `V`; overrides name a Tool from the Project manifest or a host tool like HOSTCC",
+        "unknown override `V`; overrides name a Tool, a target Toolchain tool or a host tool like HOSTCC",
     );
 }
 
@@ -212,5 +212,24 @@ fn makit_writes_nothing_into_the_source_tree() {
     assert!(
         project.scratch.join("out").is_dir(),
         "the Output tree was not created"
+    );
+}
+
+#[test]
+fn the_output_tree_must_not_be_inside_the_makit_directory() {
+    assert_fails(
+        &Project::minimal().makit(&["-O", ".makit/out", "build"]),
+        2,
+        "must not be inside .makit/",
+    );
+}
+
+#[test]
+fn bad_names_in_toolchains_and_tools_use_the_right_words() {
+    assert_fails(
+        &Project::new("[toolchain.arm-gcc]\nrole = \"target\"\ncc = \"gcc\"")
+            .makit(&["-O", "out", "build"]),
+        2,
+        "`cc` in [toolchain.arm-gcc] is not a valid Toolchain tool name",
     );
 }

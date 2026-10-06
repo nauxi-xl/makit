@@ -74,6 +74,18 @@ impl Project {
         command.output().expect("failed to run makit")
     }
 
+    /// Runs `makit <args>` in `dir`, relative to the Source tree.
+    pub fn makit_in(&self, dir: &str, args: &[&str]) -> Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_makit"));
+        command
+            .args(args)
+            .current_dir(self.src.join(dir))
+            .env("PATH", self.bin())
+            .env_remove("HOSTCC")
+            .env_remove("HOSTCXX");
+        command.output().expect("failed to run makit")
+    }
+
     /// The directory on `PATH` for every run; empty unless a test puts tools there.
     pub fn bin(&self) -> PathBuf {
         self.scratch.join("bin")
