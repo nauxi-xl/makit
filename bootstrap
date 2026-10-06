@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
-# Builds Makit, then has that Makit build the Makit repository (dogfooding).
+# Builds Makit, then has that Makit build its own Source tree (dogfooding; PowerShell twin:
+# bootstrap.ps1).
 #
 #   stage0  Cargo builds makit.
-#   stage1  stage0 builds this repository into $OUT/stage1, using .makit/config.toml.
+#   stage1  stage0 builds this Source tree into $OUT/stage1, using .makit/config.toml.
 #
 # Until the executor lands (#8), stage1 ends at "not implemented yet". Getting that far still
-# proves stage0 accepts this repository: Project manifest, Output tree and host Toolchain.
+# proves stage0 accepts this Source tree: Project manifest, Output tree and host Toolchain.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# OUT is relative to where bootstrap was started, like any other path the caller passes.
 OUT=${OUT:-out/bootstrap}
+case $OUT in
+  /* | [A-Za-z]:*) ;;
+  *) OUT=$PWD/$OUT ;;
+esac
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
 info() { echo "[bootstrap] $*"; }
 
@@ -17,19 +23,18 @@ info "stage0: cargo build"
 cargo build --locked --quiet
 makit=target/debug/makit
 
-# A fresh Output tree, so a host Toolchain recorded by an earlier run never gets in the way.
-rm -rf "$OUT/stage1"
+# Forget the host Toolchain an earlier run recorded, so a changed host never gets in the way.
+# Only that file: makit itself decides whether $OUT/stage1 is an acceptable Output tree.
+rm -f "$OUT/stage1/.host-toolchain.toml"
 info "stage1: $makit -O $OUT/stage1 build"
-set +e
-stage1=$("$makit" -O "$OUT/stage1" build 2>&1)
-status=$?
-set -e
+status=0
+stage1=$("$makit" -O "$OUT/stage1" build 2>&1) || status=$?
 echo "$stage1"
 
 if [ "$status" -eq 0 ]; then
   info "stage1 built"
 elif [ "$status" -eq 1 ] && grep -q "is not implemented yet" <<<"$stage1"; then
-  info "stage1 accepted the repository; building it waits for the executor (#8)"
+  info "stage1 accepted the Source tree; building it waits for the executor (#8)"
 else
   info "stage1 failed (exit $status)"
   exit 1

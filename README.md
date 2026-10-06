@@ -80,10 +80,11 @@ icacls "$HOME\.agent-devbox\ssh\id_box" /inheritance:r /grant:r "${env:USERNAME}
 
 ## Bootstrap Makit
 
-Makit tự build chính repo này (dogfooding). Cần `cargo`, `rustc` và một C compiler (trong devbox đã có sẵn qua `nix/project.nix`):
+Makit tự build chính repo này (dogfooding). Cần `cargo` và `rustc`, cùng `cc` để rustc link (trong devbox đã có sẵn qua `nix/project.nix`):
 
 ```
-./bootstrap    # stage0: cargo build; stage1: makit -O out/bootstrap/stage1 build
+./bootstrap      # Git Bash / Linux / macOS — stage0: cargo build; stage1: makit -O out/bootstrap/stage1 build
+.\bootstrap.ps1  # PowerShell
 ```
 
 Khi executor chưa xong (#8), stage1 dừng ở "not implemented yet" nhưng vẫn kiểm tra được Project manifest (`.makit/config.toml`), Output tree và host Toolchain.

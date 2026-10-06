@@ -25,3 +25,10 @@ jobs:
       - name: bootstrap (Makit on its own repository)
         shell: bash
         run: ./bootstrap
+      - name: bootstrap.ps1 (PowerShell twin)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./bootstrap.ps1
+      - name: shellcheck bootstrap
+        if: runner.os == 'Linux'
+        run: shellcheck bootstrap

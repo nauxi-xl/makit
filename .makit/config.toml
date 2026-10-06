@@ -1,4 +1,4 @@
-# Makit's own Project manifest: the Makit repository is built by Makit (see ./bootstrap).
+# Makit's own Project manifest: Makit builds its own Source tree (see ./bootstrap).
 
 [project]
 name = "makit"
@@ -10,4 +10,8 @@ role = "target"
 RUSTC = "rustc"
 CARGO = "cargo"
 
-# The host Toolchain is left undeclared: Makit detects it.
+# Building Makit needs only Rust on the host; declaring it keeps cc/c++ out of the host Toolchain.
+[toolchain.host]
+role = "host"
+RUSTC = "rustc"
+CARGO = "cargo"
