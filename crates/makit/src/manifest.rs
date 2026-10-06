@@ -108,7 +108,7 @@ impl Manifest {
         let text = std::fs::read_to_string(path).map_err(|e| fail(e.to_string()))?;
         let raw: RawManifest = toml::from_str(&text).map_err(|e| fail(e.to_string()))?;
         if let Some(required) = &raw.project.makit_version {
-            check_makit_version(required).map_err(&fail)?;
+            check_makit_version(required).map_err(fail)?;
         }
 
         let mut toolchains = BTreeMap::new();
@@ -117,11 +117,11 @@ impl Manifest {
                 role: raw.role,
                 default: raw.default,
                 tools: argvs(raw.tools, &format!("[toolchain.{name}]"), "Toolchain tool")
-                    .map_err(&fail)?,
+                    .map_err(fail)?,
             };
             toolchains.insert(name, toolchain);
         }
-        let tools = argvs(raw.tools, "[tools]", "Tool").map_err(&fail)?;
+        let tools = argvs(raw.tools, "[tools]", "Tool").map_err(fail)?;
 
         let manifest = Self { toolchains, tools };
         manifest.check_roles().map_err(fail)?;
