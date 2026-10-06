@@ -1,7 +1,12 @@
 //! The `makit` binary: resolves the command line into an Invocation and dispatches it.
 
 mod cli;
+mod host_toolchain;
+mod manifest;
+mod output_tree;
+mod source_tree;
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -9,6 +14,10 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use cli::{CacheSubcommand, Cli, CliSubcommand, ToolSubcommand};
+use host_toolchain::HostError;
+use manifest::{Manifest, ManifestError};
+use output_tree::{OutputTree, OutputTreeError};
+use source_tree::{MANIFEST_PATH, SourceTree};
 
 /// What the user asked Makit to do, after resolving CLI syntax.
 #[derive(Debug)]
@@ -123,21 +132,32 @@ impl Invocation {
             Self::Tool(_) | Self::Fetch | Self::CacheGc => false,
         }
     }
+
+    /// Whether the invocation works on a project, and so needs its Source tree and Project manifest.
+    fn needs_source_tree(&self) -> bool {
+        !matches!(self, Self::CacheGc)
+    }
 }
 
 #[derive(Debug)]
 enum Error {
     UnknownSubcommand(String),
     MissingOutputTree(String),
+    WorkingDirectory(std::io::Error),
+    NoProjectManifest(PathBuf),
+    Manifest(ManifestError),
+    OutputTree(OutputTreeError),
+    Host(HostError),
+    UnknownOverride(String),
     NotImplemented { invocation: String, issue: u32 },
 }
 
 impl Error {
-    /// 2 when the command line itself is wrong, 1 when a valid invocation cannot run yet.
+    /// 1 when a valid invocation cannot run yet, 2 for everything the user has to fix.
     fn exit_code(&self) -> u8 {
         match self {
-            Self::UnknownSubcommand(_) | Self::MissingOutputTree(_) => 2,
             Self::NotImplemented { .. } => 1,
+            _ => 2,
         }
     }
 }
@@ -152,6 +172,21 @@ impl fmt::Display for Error {
             Self::MissingOutputTree(name) => {
                 write!(f, "`{name}` needs an Output tree: pass -O <DIR>")
             }
+            Self::WorkingDirectory(error) => {
+                write!(f, "cannot read the working directory: {error}")
+            }
+            Self::NoProjectManifest(dir) => write!(
+                f,
+                "no Project manifest ({MANIFEST_PATH}) in {} or any parent directory",
+                dir.display()
+            ),
+            Self::Manifest(error) => error.fmt(f),
+            Self::OutputTree(error) => error.fmt(f),
+            Self::Host(error) => error.fmt(f),
+            Self::UnknownOverride(name) => write!(
+                f,
+                "unknown override `{name}`; overrides name a Tool, a target Toolchain tool or a host tool like HOSTCC"
+            ),
             Self::NotImplemented { invocation, issue } => {
                 write!(
                     f,
@@ -162,10 +197,24 @@ impl fmt::Display for Error {
     }
 }
 
-fn run(cli: Cli) -> Result<(), Error> {
+fn run(cli: Cli, overrides: &BTreeMap<String, String>) -> Result<(), Error> {
     let invocation = Invocation::from_cli(cli.subcommand)?;
     if invocation.needs_output_tree() && cli.output.is_none() {
         return Err(Error::MissingOutputTree(invocation.name()));
+    }
+    if invocation.needs_source_tree() {
+        let cwd = std::env::current_dir().map_err(Error::WorkingDirectory)?;
+        let source_tree =
+            SourceTree::discover(&cwd).ok_or(Error::NoProjectManifest(cwd.clone()))?;
+        let manifest = Manifest::load(&source_tree.manifest_path()).map_err(Error::Manifest)?;
+        check_overrides(&manifest, overrides)?;
+        if let (true, Some(dir)) = (invocation.needs_output_tree(), &cli.output) {
+            let output_tree =
+                OutputTree::new(dir, &cwd, &source_tree).map_err(Error::OutputTree)?;
+            let host = host_toolchain::resolve(&manifest, overrides, &source_tree.root, &cwd)
+                .map_err(Error::Host)?;
+            host_toolchain::record_or_check(&output_tree, &host).map_err(Error::Host)?;
+        }
     }
     Err(Error::NotImplemented {
         issue: invocation.tracking_issue(),
@@ -173,8 +222,25 @@ fn run(cli: Cli) -> Result<(), Error> {
     })
 }
 
+/// Command-line overrides must name a known tool; each one is allowed but flagged, because the
+/// build no longer matches what the Project manifest and Defconfig describe (ADR-0012).
+fn check_overrides(manifest: &Manifest, overrides: &BTreeMap<String, String>) -> Result<(), Error> {
+    let host = host_toolchain::variables(manifest);
+    for (name, value) in overrides {
+        if !host.contains(name) && !manifest.target_tool_names().any(|tool| tool == name) {
+            return Err(Error::UnknownOverride(name.clone()));
+        }
+        eprintln!(
+            "makit: warning: {name}={value} overrides the Project manifest; \
+             this build diverges from its Defconfig"
+        );
+    }
+    Ok(())
+}
+
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    let (args, overrides) = cli::split_overrides(std::env::args_os());
+    match run(Cli::parse_from(args), &overrides) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("makit: error: {error}");

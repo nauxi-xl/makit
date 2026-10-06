@@ -1,9 +1,12 @@
 //! Command-line surface of `makit`.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+
+use crate::manifest::is_tool_name;
 
 /// Configuration-driven build system for C/C++ and Rust, adapted from Linux Kbuild/Kconfig.
 #[derive(Debug, Parser)]
@@ -81,4 +84,41 @@ pub enum ToolSubcommand {
 pub enum CacheSubcommand {
     /// Evict least-recently-used entries down to the configured size limit
     Gc,
+}
+
+/// Splits Kbuild-style `NAME=value` overrides (`makit -O out HOSTCC=clang`) out of the arguments.
+///
+/// The value of `-O`/`--output` is never an override, and scanning stops once the subcommand is
+/// `tool`: everything after `makit tool <NAME> run` belongs to the Tool.
+pub fn split_overrides(
+    args: impl IntoIterator<Item = OsString>,
+) -> (Vec<OsString>, BTreeMap<String, String>) {
+    let mut rest = Vec::new();
+    let mut overrides = BTreeMap::new();
+    let mut args = args.into_iter();
+    // The program name.
+    rest.extend(args.next());
+    let mut subcommand_seen = false;
+    while let Some(arg) = args.next() {
+        let text = arg.to_str().unwrap_or_default();
+        if text == "-O" || text == "--output" {
+            rest.push(arg);
+            rest.extend(args.next());
+            continue;
+        }
+        if let Some((name, value)) = text.split_once('=').filter(|(name, _)| is_tool_name(name)) {
+            overrides.insert(name.to_owned(), value.to_owned());
+            continue;
+        }
+        if !subcommand_seen && !text.starts_with('-') {
+            subcommand_seen = true;
+            if text == "tool" {
+                rest.push(arg);
+                rest.extend(args);
+                break;
+            }
+        }
+        rest.push(arg);
+    }
+    (rest, overrides)
 }
