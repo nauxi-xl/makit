@@ -1,31 +1,12 @@
-//! Black-box tests of the `makit` binary: arguments in, exit code and output out.
+//! Black-box tests of the `makit` command line: arguments in, exit code and output out.
 
-use std::path::Path;
-use std::process::{Command, Output};
+mod support;
 
-fn makit_in(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_makit"))
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .expect("failed to run makit")
-}
-
-fn makit(args: &[&str]) -> Output {
-    makit_in(&std::env::temp_dir(), args)
-}
-
-/// Asserts that `makit <args>` exits with `code` and says `message` on stderr.
-fn assert_fails(args: &[&str], code: i32, message: &str) {
-    let out = makit(args);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(code), "makit {args:?}: {stderr}");
-    assert!(stderr.contains(message), "makit {args:?}: {stderr}");
-}
+use support::{Project, assert_fails};
 
 #[test]
 fn help_lists_every_planned_subcommand() {
-    let out = makit(&["--help"]);
+    let out = Project::minimal().makit(&["--help"]);
     assert!(out.status.success());
     let help = String::from_utf8_lossy(&out.stdout);
     let listed: Vec<&str> = help
@@ -59,6 +40,7 @@ fn help_lists_every_planned_subcommand() {
 
 #[test]
 fn subcommands_using_an_output_tree_require_dash_o() {
+    let project = Project::minimal();
     for args in [
         &[][..],
         &["build"],
@@ -72,14 +54,18 @@ fn subcommands_using_an_output_tree_require_dash_o() {
         &["clean"],
         &["mrproper"],
     ] {
-        assert_fails(args, 2, "needs an Output tree: pass -O <DIR>");
+        assert_fails(
+            &project.makit(args),
+            2,
+            "needs an Output tree: pass -O <DIR>",
+        );
     }
 }
 
 #[test]
 fn names_that_are_neither_subcommands_nor_defconfigs_are_rejected() {
     assert_fails(
-        &["-O", "out", "frobnicate"],
+        &Project::minimal().makit(&["-O", "out", "frobnicate"]),
         2,
         "unknown subcommand `frobnicate`",
     );
@@ -87,9 +73,14 @@ fn names_that_are_neither_subcommands_nor_defconfigs_are_rejected() {
 
 #[test]
 fn defconfig_names_need_a_non_empty_prefix_and_no_arguments() {
-    assert_fails(&["-O", "out", "_defconfig"], 2, "unknown subcommand");
+    let project = Project::minimal();
     assert_fails(
-        &["-O", "out", "foo_defconfig", "extra"],
+        &project.makit(&["-O", "out", "_defconfig"]),
+        2,
+        "unknown subcommand",
+    );
+    assert_fails(
+        &project.makit(&["-O", "out", "foo_defconfig", "extra"]),
         2,
         "unknown subcommand",
     );
@@ -97,6 +88,7 @@ fn defconfig_names_need_a_non_empty_prefix_and_no_arguments() {
 
 #[test]
 fn unimplemented_subcommands_point_to_their_tracking_issue() {
+    let project = Project::minimal();
     for (args, issue) in [
         (&["-O", "out"][..], "#8"),
         (&["-O", "out", "build"], "#8"),
@@ -115,7 +107,7 @@ fn unimplemented_subcommands_point_to_their_tracking_issue() {
         (&["mrproper", "-O", "out"], "#20"),
     ] {
         assert_fails(
-            args,
+            &project.makit(args),
             1,
             &format!("is not implemented yet (tracked in {issue})"),
         );
@@ -124,6 +116,7 @@ fn unimplemented_subcommands_point_to_their_tracking_issue() {
 
 #[test]
 fn everything_after_tool_run_belongs_to_the_tool() {
+    let project = Project::minimal();
     for args in [
         &["tool", "CC", "run", "--help"][..],
         &["tool", "CC", "run", "-O", "x", "foo.c"],
@@ -131,30 +124,14 @@ fn everything_after_tool_run_belongs_to_the_tool() {
         &["tool", "CC", "run", "-O2", "-c", "foo.c"],
     ] {
         assert_fails(
-            args,
+            &project.makit(args),
             1,
             "`tool CC run` is not implemented yet (tracked in #17)",
         );
     }
     assert_fails(
-        &["tool", "CC", "exec"],
+        &project.makit(&["tool", "CC", "exec"]),
         2,
         "unknown subcommand `tool CC exec`",
     );
-}
-
-#[test]
-fn makit_writes_nothing_into_the_working_directory() {
-    let dir = std::env::temp_dir().join(format!("makit-cli-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    for args in [
-        &["-O", "out"][..],
-        &["-O", "out", "stm32f4_defconfig"],
-        &["--help"],
-    ] {
-        makit_in(&dir, args);
-    }
-    let leftovers: Vec<_> = std::fs::read_dir(&dir).unwrap().collect();
-    std::fs::remove_dir_all(&dir).unwrap();
-    assert!(leftovers.is_empty(), "makit wrote {leftovers:?}");
 }

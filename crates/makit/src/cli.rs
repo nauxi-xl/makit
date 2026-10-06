@@ -1,9 +1,12 @@
 //! Command-line surface of `makit`.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+
+use crate::manifest::is_tool_name;
 
 /// Configuration-driven build system for C/C++ and Rust, adapted from Linux Kbuild/Kconfig.
 #[derive(Debug, Parser)]
@@ -81,4 +84,31 @@ pub enum ToolSubcommand {
 pub enum CacheSubcommand {
     /// Evict least-recently-used entries down to the configured size limit
     Gc,
+}
+
+/// Splits Kbuild-style `NAME=value` overrides (`makit -O out HOSTCC=clang`) out of the arguments.
+///
+/// Scanning stops at `tool`: everything after `makit tool <NAME> run` belongs to the Tool.
+pub fn split_overrides(
+    args: impl IntoIterator<Item = OsString>,
+) -> (Vec<OsString>, BTreeMap<String, String>) {
+    let mut rest = Vec::new();
+    let mut overrides = BTreeMap::new();
+    let mut scanning = true;
+    for arg in args {
+        if arg == "tool" {
+            scanning = false;
+        }
+        let assignment = arg
+            .to_str()
+            .and_then(|text| text.split_once('='))
+            .filter(|(name, _)| is_tool_name(name));
+        match assignment {
+            Some((name, value)) if scanning => {
+                overrides.insert(name.to_owned(), value.to_owned());
+            }
+            _ => rest.push(arg),
+        }
+    }
+    (rest, overrides)
 }
