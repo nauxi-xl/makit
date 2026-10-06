@@ -41,3 +41,5 @@ if ($status -eq 0) {
 } else {
   Fail "stage1 failed (exit $status)"
 }
+# A tolerated stage1 still leaves $LASTEXITCODE at 1, which would become the script's exit code.
+exit 0
